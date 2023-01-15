@@ -14,23 +14,6 @@ from inverted_index_gcp import MultiFileReader
 import pandas as pd
 
 
-def read_pickle(bucket, path):
-    client = storage.Client()
-
-    # Get the bucket
-    bucket = client.bucket(bucket)
-
-    # Get the blob (pickle file)
-    blob = bucket.get_blob(path)
-
-    # Read the contents of the blob
-    content = blob.download_as_string()
-
-    # Load the pickle file
-    obj = pickle.loads(content)
-    return obj
-
-
 def read_pickle_in(path):
     """
       this function reading a pickle file from disk to object in memory
@@ -48,30 +31,30 @@ def read_pickle_in(path):
     return pick
 
 
-"TO DO: save a dictionary of doc_id: title"
+"dictionary of doc_id: title"
 doc_title_dict = read_pickle_in("./postings_gcp/title_dict.pickle")
 
-"TO DO: save a dictionary of doc_id: doc_len"
+"dictionary of doc_id: doc_len"
 DL = read_pickle_in("./postings_gcp/DL.pickle")
 
-"TO DO: save page view counter"
+"page view counter"
 pageview = read_pickle_in("./postings_gcp/pageviews-202108-user.pkl")
 
+"term total dictionary"
 term_total = read_pickle_in("./postings_gcp/term_total.pickle")
 
+"dictionary for normalization of term frequency"
 norm_dict = read_pickle_in("./postings_gcp/norm_dict.pickle")
 
 "page rank"
 pagerank = read_pickle_in('./postings_gcp/pagerank.pickle')
-# df = pd.read_csv('./postings_gcp/pagerank.pickle')
-# df.columns = ['id', 'page rank']
-# pagerank = df.set_index('id')
-# pagerank = pagerank.to_dict()['page rank']
 
 "indexes"
 body_index = read_pickle_in("./postings_gcp/body.pkl")
 title_index = read_pickle_in("./postings_gcp/title.pkl")
 anchor_index = read_pickle_in("./postings_gcp/anchor_text.pkl")
+
+
 
 nltk.download('stopwords')
 english_stopwords = frozenset(stopwords.words('english'))
@@ -108,56 +91,6 @@ def tokenize(text):
     return new_tokens
 
 
-def generate_query_tfidf_vector(query_to_search, index):
-    """
-    Generate a vector representing the query. Each entry within this vector represents a tfidf score.
-    The terms representing the query will be the unique terms in the index.
-
-    We will use tfidf on the query as well.
-    For calculation of IDF, use log with base 10.
-    tf will be normalized based on the length of the query.
-
-    Parameters:
-    -----------
-    query_to_search: list of tokens (str). This list will be preprocessed in advance (e.g., lower case, filtering stopwords, etc.').
-                     Example: 'Hello, I love information retrival' --->  ['hello','love','information','retrieval']
-
-    index:           inverted index loaded from the corresponding files.
-
-    Returns:
-    -----------
-    vectorized query with tfidf scores
-    """
-
-    epsilon = .0000001
-    total_vocab_size = len(term_total)
-    Q = np.zeros(total_vocab_size)
-    term_vector = list(term_total.keys())
-    counter = Counter(query_to_search)
-    for token in np.unique(query_to_search):
-        if token in term_total.keys():  # avoid terms that do not appear in the index.
-            tf = counter[token] / len(query_to_search)  # term frequency divded by the length of the query
-            df = index.df[token]
-            idf = np.math.log((len(DL)) / (df + epsilon), 10)  # smoothing
-
-            try:
-                ind = term_vector.index(token)
-                Q[ind] = tf * idf
-            except:
-                pass
-    return Q
-
-
-def get_posting_iter(index):
-    """
-    This function returning the iterator working with posting list.
-
-    Parameters:
-    ----------
-    index: inverted index
-    """
-    words, pls = zip(*index.posting_lists_iter())
-    return words, pls
 
 
 def get_candidate_documents_and_scores(query_to_search, index, pls):
@@ -205,74 +138,6 @@ def get_candidate_documents_and_scores(query_to_search, index, pls):
     return candidates
 
 
-def generate_document_tfidf_matrix(query_to_search, index, words, pls):
-    """
-    Generate a DataFrame `D` of tfidf scores for a given query.
-    Rows will be the documents candidates for a given query
-    Columns will be the unique terms in the index.
-    The value for a given document and term will be its tfidf score.
-
-    Parameters:
-    -----------
-    query_to_search: list of tokens (str). This list will be preprocessed in advance (e.g., lower case, filtering stopwords, etc.').
-                     Example: 'Hello, I love information retrival' --->  ['hello','love','information','retrieval']
-
-    index:           inverted index loaded from the corresponding files.
-
-
-    words,pls: iterator for working with posting.
-
-    Returns:
-    -----------
-    DataFrame of tfidf scores.
-    """
-
-    total_vocab_size = len(term_total)
-    candidates_scores = get_candidate_documents_and_scores(query_to_search, index, words,
-                                                           pls)  # We do not need to utilize all document. Only the docuemnts which have corrspoinding terms with the query.
-    unique_candidates = np.unique([doc_id for doc_id, freq in candidates_scores.keys()])
-    D = np.zeros((len(unique_candidates), total_vocab_size))
-    D = pd.DataFrame(D)
-
-    D.index = unique_candidates
-    D.columns = term_total.keys()
-
-    for key in candidates_scores:
-        tfidf = candidates_scores[key]
-        doc_id, term = key
-        D.loc[doc_id][term] = tfidf
-
-    return D
-
-
-def cosine_similarity(D, Q):
-    """
-    Calculate the cosine similarity for each candidate document in D and a given query (e.g., Q).
-    Generate a dictionary of cosine similarity scores
-    key: doc_id
-    value: cosine similarity score
-
-    Parameters:
-    -----------
-    D: DataFrame of tfidf scores.
-
-    Q: vectorized query with tfidf scores
-
-    Returns:
-    -----------
-    dictionary of cosine similarity score as follows:
-                                                                key: document id (e.g., doc_id)
-                                                                value: cosine similarty score.
-    """
-    sim_dict = {}
-
-    for index, row in D.iterrows():
-        # for column in D:
-        cosine = round(np.dot(row, Q) / (np.linalg.norm(row) * np.linalg.norm(Q)))
-        sim_dict[index] = cosine
-
-    return sim_dict
-
 
 def get_top_n(sim_dict, N=3):
     """
@@ -292,111 +157,22 @@ def get_top_n(sim_dict, N=3):
     a ranked list of pairs (doc_id, score) in the length of N.
     """
 
-    return sorted([(doc_id, round(score, 5)) for doc_id, score in sim_dict.items()], key=lambda x: x[1], reverse=True)[
-           :N]
+    return sorted([(doc_id, round(score, 5)) for doc_id, score in sim_dict.items()], key=lambda x: x[1], reverse=True)[:N]
 
 
-# class BM25_from_index:
-#     """
-#     Best Match 25.
-#     ----------
-#     k1 : float, default 1.5
-#
-#     b : float, default 0.75
-#
-#     index: inverted index
-#     """
-#
-#     def __init__(self, index, k1=1.5, b=0.75):
-#         self.b = b
-#         self.k1 = k1
-#         self.index = index
-#         self.N = len(DL)
-#         self.AVGDL = sum(DL.values()) / self.N
-#         self.words, self.pls = zip(*self.index.posting_lists_iter())
-#
-#     def calc_idf(self, list_of_tokens):
-#         """
-#         This function calculate the idf values according to the BM25 idf formula for each term in the query.
-#
-#         Parameters:
-#         -----------
-#         query: list of token representing the query. For example: ['look', 'blue', 'sky']
-#
-#         Returns:
-#         -----------
-#         idf: dictionary of idf scores. As follows:
-#                                                     key: term
-#                                                     value: bm25 idf score
-#         """
-#         idf = {}
-#         for term in list_of_tokens:
-#             if term in self.index.df.keys():
-#                 n_ti = self.index.df[term]
-#                 idf[term] = math.log(1 + (self.N - n_ti + 0.5) / (n_ti + 0.5))
-#             else:
-#                 pass
-#         return idf
-#
-#     def search(self, queries, N=3):
-#         """
-#         This function calculate the bm25 score for given query and document.
-#         We need to check only documents which are 'candidates' for a given query.
-#         This function return a dictionary of scores as the following:
-#                                                                     key: query_id
-#                                                                     value: a ranked list of pairs (doc_id, score) in the length of N.
-#
-#         Parameters:
-#         -----------
-#         query: list of token representing the query. For example: ['look', 'blue', 'sky']
-#         doc_id: integer, document id.
-#
-#         Returns:
-#         -----------
-#         score: float, bm25 score.
-#         """
-#         # YOUR CODE HERE
-#
-#         scores_d = {}
-#         for i in queries:
-#             q = list(set(queries[i]))
-#             self.idf = self.calc_idf(q)
-#             docs = get_candidate_documents_and_scores(q, self.index, self.words, self.pls)
-#             candidates = {id: docs[(id, term)] for (id, term) in docs}
-#             scores = []
-#             for j in candidates:
-#                 score = self._score(q, j)
-#                 # if score not in scores:
-#                 scores.append((j, score))
-#             sort = sorted(scores, key=lambda tup: tup[1], reverse=True)
-#             scores_d[i] = sort[:N]
-#         return scores_d
-#
-#     def _score(self, query, doc_id):
-#         """
-#         This function calculate the bm25 score for given query and document.
-#
-#         Parameters:
-#         -----------
-#         query: list of token representing the query. For example: ['look', 'blue', 'sky']
-#         doc_id: integer, document id.
-#
-#         Returns:
-#         -----------
-#         score: float, bm25 score.
-#         """
-#         score = 0.0
-#         doc_len = DL[doc_id]
-#
-#         for term in query:
-#             if term in self.term_total.keys():
-#                 term_frequencies = dict(self.pls[self.words.index(term)])
-#                 if doc_id in term_frequencies.keys():
-#                     freq = term_frequencies[doc_id]
-#                     numerator = self.idf[term] * freq * (self.k1 + 1)
-#                     denominator = freq + self.k1 * (1 - self.b + self.b * doc_len / self.AVGDL)
-#                     score += (numerator / denominator)
-#         return score
+TUPLE_SIZE = 6
+TF_MASK = 2 ** 16 - 1  # Masking the 16 low bits of an integer
+def read_posting_list(inverted, w):
+    with closing(MultiFileReader()) as reader:
+        locs = inverted.posting_locs[w]
+        b = reader.read(locs, inverted.df.get(w, 0) * TUPLE_SIZE)
+        posting_list = []
+        for i in range(inverted.df.get(w, 0)):
+            doc_id = int.from_bytes(b[i * TUPLE_SIZE:i * TUPLE_SIZE + 4], 'big')
+            tf = int.from_bytes(b[i * TUPLE_SIZE + 4:(i + 1) * TUPLE_SIZE], 'big')
+            posting_list.append((doc_id, tf))
+        return posting_list
+
 
 
 def cosine_sim(index, query, pls):
@@ -426,171 +202,6 @@ def cosine_sim(index, query, pls):
     return sim
 
 
-TUPLE_SIZE = 6
-TF_MASK = 2 ** 16 - 1  # Masking the 16 low bits of an integer
-
-
-def read_posting_list(inverted, w):
-    with closing(MultiFileReader()) as reader:
-        locs = inverted.posting_locs[w]
-        b = reader.read(locs, inverted.df.get(w, 0) * TUPLE_SIZE)
-        posting_list = []
-        for i in range(inverted.df.get(w, 0)):
-            doc_id = int.from_bytes(b[i * TUPLE_SIZE:i * TUPLE_SIZE + 4], 'big')
-            tf = int.from_bytes(b[i * TUPLE_SIZE + 4:(i + 1) * TUPLE_SIZE], 'big')
-            posting_list.append((doc_id, tf))
-        return posting_list
-
-
-# def calc_idf(index, list_of_tokens):
-#     """
-#     This function calculate the idf values according to the BM25 idf formula for each term in the query.
-#
-#     Parameters:
-#     -----------
-#     query: list of token representing the query. For example: ['look', 'blue', 'sky']
-#
-#     Returns:
-#     -----------
-#     idf: dictionary of idf scores. As follows:
-#                                                 key: term
-#                                                 value: bm25 idf score
-#     """
-#     N = len(DL)
-#     idf = {}
-#     for term in list_of_tokens:
-#         if term in index.df.keys():
-#             n_ti = index.df[term]
-#             idf[term] = math.log(1 + (N - n_ti + 0.5) / (n_ti + 0.5))
-#         else:
-#             pass
-#     return idf
-#
-#
-# def all_scores(index, query, doc_ids, b=0.75, k1=1.2, k3=1.5):
-#     """
-#     This function calculate the bm25 score for given query and document.
-#
-#     Parameters:
-#     -----------
-#     query: list of token representing the query. For example: ['look', 'blue', 'sky']
-#     doc_id: integer, document id.
-#
-#     Returns:
-#     -----------
-#     score: float, bm25 score.
-#     """
-#     N = len(DL)
-#     AVGDL = sum(DL.values()) / N
-#     freq_q = Counter(query)
-#     len_q = len(query)
-#
-#     all_scores = {}
-#     # score(D,Q) = Σ(i=1 to n)[IDF(qi) * ((tf(qi,D) * (k1 + 1)) / (tf(qi,D) + k1 * (1 - b + b * |D|/avgdl)) * (k3 + 1) * qtf(qi) / (k3 + qtf(qi))]
-#
-#     idf = calc_idf(index, query)
-#
-#     for doc_id in doc_ids:
-#         score = 0.0
-#         # flag = False
-#         for term in query:
-#             term_frequencies = dict(read_posting_list(index, term))
-#             if doc_id in term_frequencies.keys():
-#                 # flag = True
-#                 doc_len = DL[doc_id]
-#                 freq = term_frequencies[doc_id]
-#                 qtf = freq_q[term] / len_q
-#                 denominator = freq + k1 * (1 - b + b * doc_len / AVGDL)
-#                 numerator = idf.get(term, 0) * (freq * (k1 + 1) / denominator) * ((k3 + 1) * qtf / (k3 + qtf))
-#                 score += numerator
-#         # if score != 0.0 and flag:
-#         all_scores[doc_id] = score
-#
-#     return all_scores
-#
-#
-# def merge_results(title_scores, body_scores, title_weight=0.5, text_weight=0.5):
-#     """
-#     This function merge and sort documents retrieved by its weighte score (e.g., title and body).
-#
-#     Parameters:
-#     -----------
-#     title_scores: a dictionary build upon the title index of queries and tuples representing scores as follows:
-#                                                                             key: query_id
-#                                                                             value: list of pairs in the following format:(doc_id,score)
-#
-#     body_scores: a dictionary build upon the body/text index of queries and tuples representing scores as follows:
-#                                                                             key: query_id
-#                                                                             value: list of pairs in the following format:(doc_id,score)
-#     title_weight: float, for weigted average utilizing title and body scores
-#     text_weight: float, for weigted average utilizing title and body scores
-#     N: Integer. How many document to retrieve. This argument is passed to topN function. By default N = 3, for the topN function.
-#
-#     Returns:
-#     -----------
-#     dictionary of querires and topN pairs as follows:
-#                                                         key: query_id
-#                                                         value: list of pairs in the following format:(doc_id,score).
-#     """
-#
-#     # YOUR CODE HERE
-#
-#     return_dict = {}
-#
-#     for ID in title_scores.keys():
-#         return_dict[ID] = title_scores[ID] * title_weight
-#
-#     for ID in body_scores.keys():
-#         if ID not in return_dict.keys():
-#             return_dict[ID] = body_scores[ID] * text_weight
-#         else:
-#             return_dict[ID] += body_scores[ID] * text_weight
-#
-#     return return_dict
-#
-#
-# def bm_25_search(index, query, N=100):
-#     """
-#     This function calculate the bm25 score for given query and document.
-#     We need to check only documents which are 'candidates' for a given query.
-#     This function return a dictionary of scores as the following:
-#                                                                 key: query_id
-#                                                                 value: a ranked list of pairs (doc_id, score) in the length of N.
-#
-#     Parameters:
-#     -----------
-#     query: list of token representing the query. For example: ['look', 'blue', 'sky']
-#     doc_id: integer, document id.
-#
-#     Returns:
-#     -----------
-#     score: float, bm25 score.
-#     """
-#
-#     pls = {}
-#     for i in query:
-#         pls[i] = read_posting_list(body_index, i)
-#
-#     lst = []
-#     c_docs = get_candidate_documents_and_scores(query, index, pls)
-#     candidates_1 = [j[0] for j in c_docs.keys()]
-#     # print("candidates_1" + str(candidates_1))
-#     candidates = set(candidates_1)
-#     AllScores = all_scores(index, query, candidates, 0.75, 1.2, 1.5)
-#
-#     for id_doc in candidates:
-#         score = AllScores[id_doc]
-#         if (id_doc, score) not in lst:
-#             lst.append((id_doc, score))
-#         else:
-#             continue
-#
-#     sorted_by_second = sorted(lst, key=lambda tup: tup[1], reverse=True)[:N]
-#     to_return = dict(sorted_by_second)
-#
-#     # print(queries)
-#     return to_return
-
 
 def calc_idf(index, list_of_tokens):
     """
@@ -615,47 +226,6 @@ def calc_idf(index, list_of_tokens):
         else:
             pass
     return idf
-
-
-def all_scores(index, query, doc_ids, b=0.75, k1=1.2, k3=1.5):
-    """
-    This function calculate the bm25 score for given query and document.
-
-    Parameters:
-    -----------
-    query: list of token representing the query. For example: ['look', 'blue', 'sky']
-    doc_id: integer, document id.
-
-    Returns:
-    -----------
-    score: float, bm25 score.
-    """
-    N = len(DL)
-    AVGDL = sum(DL.values()) / N
-    freq_q = Counter(query)
-    len_q = len(query)
-
-    total_scores = {}
-
-    idf = calc_idf(index, query)
-
-    for doc_id in doc_ids:
-        score = 0.0
-        # flag = False
-        for term in query:
-            term_frequencies = dict(read_posting_list(index, term))
-            if doc_id in term_frequencies.keys():
-                # flag = True
-                doc_len = DL[doc_id]
-                freq = term_frequencies[doc_id]
-                qtf = freq_q[term] / len_q
-                denominator = freq + k1 * (1 - b + b * doc_len / AVGDL)
-                numerator = idf.get(term, 0) * (freq * (k1 + 1) / denominator) * ((k3 + 1) * qtf / (k3 + qtf))
-                score += numerator
-        # if score != 0.0 and flag:
-        total_scores[doc_id] = score
-
-    return total_scores
 
 
 def merge_results(title_scores, body_scores, title_weight=0.5, text_weight=0.5):
@@ -698,58 +268,28 @@ def merge_results(title_scores, body_scores, title_weight=0.5, text_weight=0.5):
     return return_dict
 
 
-def bm_25_search(index, query, N=100):
-    """
-    This function calculate the bm25 score for given query and document.
-    We need to check only documents which are 'candidates' for a given query.
-    This function return a dictionary of scores as the following:
-                                                                key: query_id
-                                                                value: a ranked list of pairs (doc_id, score) in the length of N.
-
-    Parameters:
-    -----------
-    query: list of token representing the query. For example: ['look', 'blue', 'sky']
-    doc_id: integer, document id.
-
-    Returns:
-    -----------
-    score: float, bm25 score.
-    """
-
-    pls = {}
-    for i in query:
-        pls[i] = read_posting_list(body_index, i)
-
-    c_docs = get_candidate_documents_and_scores(query, index, pls)
-    candidates = set([j[0] for j in c_docs.keys()])
-    AllScores = all_scores(index, query, candidates, 0.75, 1.2, 1.5)
-    sorted_by_second = sorted(AllScores.items(), key=lambda tup: tup[1], reverse=True)[:N]
-    to_return = dict(sorted_by_second)
-    return to_return
-
-
-def bm25(index, query, pls, b=0.75, k1=1.2):
+def bm25(index, query, pls, b=0.75, k1=1.2, k3=1.5):
     N = len(DL)
     AVGDL = sum(DL.values()) / N
     freq_q = Counter(query)
     len_q = len(query)
     idf = calc_idf(index,query)
 
-    score_ret = Counter()
+    scores = Counter()
     for term in query:
         postings = pls[term]
-        dic = {}
+        term_frequencies = {}
         for doc_id, value in postings:
-            dic[doc_id] = dic.get(doc_id, 0) + value
-        for doc_id, value in dic.items():
-            score = 0.0
+            term_frequencies[doc_id] = term_frequencies.get(doc_id, 0) + value
+        for doc_id, value in term_frequencies.items():
             doc_len = DL[doc_id]
             freq = value
-            numerator = idf.get(term,0) * freq * (k1 + 1)
+            qtf = freq_q[term] / len_q
+            numerator = idf.get(term,0) * freq * (k1 + 1) * ((k3 + 1) * qtf/(k3 + qtf))
             denominator = freq + k1 * (1 - b + b * doc_len / AVGDL)
             score = round((numerator / denominator), 5)
-            score_ret[doc_id] = round(score_ret.get(doc_id, 0) + score, 5)
-    return score_ret
+            scores[doc_id] = round(scores.get(doc_id, 0) + score, 5)
+    return scores
 
 
 min_pagerank = min(pagerank.values())
