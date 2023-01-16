@@ -40,8 +40,8 @@ def search():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-    # res = search_backend(query)
-    res = search_bm(query)
+
+    res = search_back(query)
 
     # END SOLUTION
     return jsonify(res)

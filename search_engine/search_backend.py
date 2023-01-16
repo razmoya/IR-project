@@ -1,4 +1,3 @@
-
 from collections import Counter
 import nltk
 from nltk.stem.porter import *
@@ -130,7 +129,6 @@ def get_candidate_documents_and_scores(query_to_search, index, pls):
                 else:
                     continue
 
-            #             normlized_tfidf = [(doc_id, (freq / DL[doc_id]) * np.math.log(len(DL) / index.df[term], 10)) for doc_id, freq in list_of_doc]
 
             for doc_id, tfidf in normlized_tfidf:
                 candidates[(doc_id, term)] = candidates.get((doc_id, term), 0) + tfidf
@@ -158,6 +156,7 @@ def get_top_n(sim_dict, N=3):
     """
 
     return sorted([(doc_id, round(score, 5)) for doc_id, score in sim_dict.items()], key=lambda x: x[1], reverse=True)[:N]
+
 
 
 TUPLE_SIZE = 6
@@ -252,7 +251,6 @@ def merge_results(title_scores, body_scores, title_weight=0.5, text_weight=0.5):
                                                         value: list of pairs in the following format:(doc_id,score).
     """
 
-    # YOUR CODE HERE
 
     return_dict = {}
 
@@ -279,17 +277,18 @@ def bm25(index, query, pls, b=0.75, k1=1.2, k3=1.5):
     for term in query:
         postings = pls[term]
         term_frequencies = {}
-        for doc_id, value in postings:
-            term_frequencies[doc_id] = term_frequencies.get(doc_id, 0) + value
-        for doc_id, value in term_frequencies.items():
-            doc_len = DL[doc_id]
+        for doc, value in postings:
+            term_frequencies[doc] = term_frequencies.get(doc, 0) + value
+        for doc, value in term_frequencies.items():
+            doc_len = DL[doc]
             freq = value
             qtf = freq_q[term] / len_q
             numerator = idf.get(term,0) * freq * (k1 + 1) * ((k3 + 1) * qtf/(k3 + qtf))
             denominator = freq + k1 * (1 - b + b * doc_len / AVGDL)
             score = round((numerator / denominator), 5)
-            scores[doc_id] = round(scores.get(doc_id, 0) + score, 5)
+            scores[doc] = round(scores.get(doc, 0) + score, 5)
     return scores
+
 
 
 min_pagerank = min(pagerank.values())
@@ -304,53 +303,71 @@ def normalized_pageview(score):
     return (score - min_pageview) / (max_pageview - min_pageview)
 
 
-def search_bm(query):
-    def search_bm(query):
-        q_tokens = tokenize(query)
-        pls = {}
-        pls_title = {}
-        for i in q_tokens:
-            pls[i] = read_posting_list(body_index, i)
-            pls_title[i] = read_posting_list(title_index, i)
+def search_back(query):
+    q_tokens = tokenize(query)
+    pls = {}
+    pls_title = {}
+    for i in q_tokens:
+        pls[i] = read_posting_list(body_index, i)
+        pls_title[i] = read_posting_list(title_index, i)
 
-        if is_question(query):
+
+    if is_question(query):
+        print(query)
+        print("bm25")
+        body_scores = bm25(body_index, q_tokens, pls)
+        lst = body_scores.most_common(100)
+        new = [(j[0], pagerank.get(j[0], 0)) for j in lst]
+        sort = sorted(new, key=lambda x: x[1], reverse=True)
+        res = [(j[0], doc_title_dict[j[0]]) for j in sort]
+
+    else:
+        candidates = get_candidate_documents_and_scores(q_tokens, title_index, pls_title)
+        if candidates:
             print(query)
-            print("bm25")
-            body_scores = bm25(body_index, q_tokens, pls)
-            lst = body_scores.most_common(100)
-            new = [(j[0], pagerank.get(j[0], 0)) for j in lst]
-            sort = sorted(new, key=lambda x: x[1], reverse=True)
-            res = [(j[0], doc_title_dict[j[0]]) for j in sort]
-        else:
-            # title:
-            candidates = get_candidate_documents_and_scores(q_tokens, title_index, pls_title)
-            if candidates:
-                print(query)
-                print("title binary")
-                can = Counter(elem[0] for elem in candidates.keys())
-                for i in can:
-                    can[i] = can[i] / len(q_tokens)
-                normalized = can.items()
-                # max_number = max(normalized, key=lambda x: x[1])[1]
-                title_lst = [(doc_id, pageview.get(doc_id, 0)) for doc_id, number in normalized if number > 0.7]
-                body_scores = bm25(body_index, q_tokens, pls)
-                body_lst = [(doc_id, pageview.get(doc_id, 0)) for doc_id, score in body_scores.most_common(100)]
-                merge = title_lst
-                for i in body_lst:
-                    if i not in merge:
-                        merge.append(i)
-                sort = sorted(merge, key=lambda x: x[1], reverse=True)
-                res = [(j[0], doc_title_dict[j[0]]) for j in sort[:100]]
-            else:
-                print(query)
-                print("bm25")
-                body_scores = bm25(body_index, q_tokens, pls)
-                lst = body_scores.most_common(100)
-                new = [(j[0], pagerank.get(j[0], 0)) for j in lst]
-                sort = sorted(new, key=lambda x: x[1], reverse=True)
-                res = [(j[0], doc_title_dict[j[0]]) for j in sort]
+            print("binary_title + body-bm")
+            can = Counter(elem[0] for elem in candidates.keys())
+            for i in can:
+                can[i] = can[i]/len(q_tokens)
 
-        return res
+            normalized = can.items()
+            # max_number = max(normalized, key=lambda x: x[1])[1]
+            title_lst = [(doc_id, pageview.get(doc_id,0)) for doc_id, number in normalized if number > 0.7]
+
+            body_scores = bm25(body_index, q_tokens, pls)
+            body_lst = [(doc_id, pageview.get(doc_id,0)) for doc_id, score in body_scores.most_common(100)]
+            merge = title_lst
+            for i in body_lst:
+                if i not in merge:
+                    merge.append(i)
+            sort = sorted(merge, key=lambda x: x[1], reverse=True)
+            res = [(j[0], doc_title_dict[j[0]]) for j in sort[:100]]
+
+        else:
+            print(query)
+            print("body-bm + body-cosine")
+            body_scores = bm25(body_index, q_tokens, pls)
+            max_bm =1
+            if body_scores:
+                max_bm = max(body_scores.items(), key=lambda x: x[1])[1]
+            for i in body_scores:
+                body_scores[i] = body_scores[i] / max_bm
+
+            sim_dict = cosine_sim(body_index, q_tokens, pls)
+            max_sim =1
+            if sim_dict:
+                max_sim = max(sim_dict.items(), key=lambda x: x[1])[1]
+            for i in sim_dict:
+                sim_dict[i] = sim_dict[i] / max_sim
+
+            merge = merge_results(sim_dict, body_scores)
+
+            sort = get_top_n(merge)
+            lst = [(doc_id, pagerank.get(doc_id, 0)) for doc_id, score in sort]
+            sort2 = sorted(lst, key=lambda x: x[1], reverse=True)
+            res = [(j[0], doc_title_dict[j[0]]) for j in sort2]
+
+    return res
 
 
 def search_body_back(query):
@@ -390,6 +407,7 @@ def search_anchor_back(query):
     candidates = get_candidate_documents_and_scores(q_tokens, anchor_index, pls)
     can = Counter(elem[0] for elem in candidates.keys())
     lst = can.most_common()
+    print(lst[:50])
     res = [(j[0], doc_title_dict[j[0]]) for j in lst]
     return res
 
@@ -405,28 +423,6 @@ def binary_body_search(query):
     res = [(j[0], doc_title_dict[j[0]]) for j in lst]
     return res
 
-
-def search_backend(query):
-    # q_tokens = tokenize(query)
-    # body = bm_25_search(body_index, q_tokens)
-    # print("1")
-    # # print(body.keys())
-    # title = bm_25_search(title_index, q_tokens)
-    # print("2")
-    # # print(title.keys())
-    # merge = merge_results(body, title)
-    # print("3")
-    # # lst = merge.keys()
-    # # print(lst)
-    # res = [(j, doc_title_dict[j]) for j in merge.keys()]
-    body_res = search_body_back(query)
-    title_res = search_title_back(query)
-    body = [(j, pagerank.get(j[0], 0)) for j in body_res]
-    title = [(j, pagerank.get(j[0], 0)) for j in title_res]
-    merge = list(set(body + title))
-    sort = sorted(merge, key=lambda x: x[1], reverse=True)
-    res = [i[0] for i in sort][:100]
-    return res
 
 
 def get_pagerank_back(wiki_ids):
