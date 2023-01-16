@@ -323,8 +323,6 @@ def search_back(query):
         # binary title + bm25 body
         candidates = get_candidate_documents_and_scores(q_tokens, title_index, pls_title)
         if candidates:
-            print(query)
-            print("title binary")
             can = Counter(elem[0] for elem in candidates.keys())
             for i in can:
                 can[i] = can[i]/len(q_tokens)
