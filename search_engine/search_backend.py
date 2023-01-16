@@ -318,7 +318,7 @@ def search_back(query):
         lst = body_scores.most_common(100)
         new = [(j[0], pagerank.get(j[0], 0)) for j in lst]
         sort = sorted(new, key=lambda x: x[1], reverse=True)
-        res = [(j[0], doc_title_dict[j[0]]) for j in sort]
+        res = [(j[0], doc_title_dict[j[0]]) for j in sort][:10]
     else:
         # binary title + bm25 body
         candidates = get_candidate_documents_and_scores(q_tokens, title_index, pls_title)
@@ -337,14 +337,14 @@ def search_back(query):
                 if i not in merge:
                     merge.append(i)
             sort = sorted(merge, key=lambda x: x[1], reverse=True)
-            res = [(j[0], doc_title_dict[j[0]]) for j in sort[:100]]
+            res = [(j[0], doc_title_dict[j[0]]) for j in sort[:10]]
         else:
             # bm25 on body
             body_scores = bm25(body_index, q_tokens, pls)
             lst = body_scores.most_common(100)
             new = [(j[0], pagerank.get(j[0], 0)) for j in lst]
             sort = sorted(new, key=lambda x: x[1], reverse=True)
-            res = [(j[0], doc_title_dict[j[0]]) for j in sort]
+            res = [(j[0], doc_title_dict[j[0]]) for j in sort][:10]
 
     return res
 
