@@ -18,7 +18,7 @@ def read_pickle_in(path):
       this function reading a pickle file from disk to object in memory
       Parameters:
       -----------
-      file_name: string , file name.
+      path: string , path to file.
       Returns:
       -----------
       object
@@ -227,7 +227,7 @@ def calc_idf(index, list_of_tokens):
     return idf
 
 
-def merge_results(title_scores, body_scores, title_weight=0.5, text_weight=0.5):
+def merge_results(scores_1, scores_2, weight_1=0.5, weight_2=0.5):
     """
     This function merge and sort documents retrieved by its weighte score (e.g., title and body).
 
@@ -251,17 +251,18 @@ def merge_results(title_scores, body_scores, title_weight=0.5, text_weight=0.5):
                                                         value: list of pairs in the following format:(doc_id,score).
     """
 
+    # YOUR CODE HERE
 
     return_dict = {}
 
-    for i in title_scores.keys():
-        return_dict[i] = title_scores[i] * title_weight
+    for i in scores_1.keys():
+        return_dict[i] = scores_1[i] * weight_1
 
-    for i in body_scores.keys():
+    for i in scores_2.keys():
         if i not in return_dict.keys():
-            return_dict[i] = body_scores[i] * text_weight
+            return_dict[i] = scores_2[i] * weight_2
         else:
-            return_dict[i] += body_scores[i] * text_weight
+            return_dict[i] += scores_2[i] * weight_2
 
     return return_dict
 
@@ -311,29 +312,24 @@ def search_back(query):
         pls[i] = read_posting_list(body_index, i)
         pls_title[i] = read_posting_list(title_index, i)
 
-
     if is_question(query):
-        print(query)
-        print("bm25")
+        # bm25 on body
         body_scores = bm25(body_index, q_tokens, pls)
         lst = body_scores.most_common(100)
         new = [(j[0], pagerank.get(j[0], 0)) for j in lst]
         sort = sorted(new, key=lambda x: x[1], reverse=True)
         res = [(j[0], doc_title_dict[j[0]]) for j in sort]
-
     else:
+        # binary title + bm25 body
         candidates = get_candidate_documents_and_scores(q_tokens, title_index, pls_title)
         if candidates:
             print(query)
-            print("binary_title + body-bm")
+            print("title binary")
             can = Counter(elem[0] for elem in candidates.keys())
             for i in can:
                 can[i] = can[i]/len(q_tokens)
-
             normalized = can.items()
-            # max_number = max(normalized, key=lambda x: x[1])[1]
             title_lst = [(doc_id, pageview.get(doc_id,0)) for doc_id, number in normalized if number > 0.7]
-
             body_scores = bm25(body_index, q_tokens, pls)
             body_lst = [(doc_id, pageview.get(doc_id,0)) for doc_id, score in body_scores.most_common(100)]
             merge = title_lst
@@ -342,33 +338,15 @@ def search_back(query):
                     merge.append(i)
             sort = sorted(merge, key=lambda x: x[1], reverse=True)
             res = [(j[0], doc_title_dict[j[0]]) for j in sort[:100]]
-
         else:
-            print(query)
-            print("body-bm + body-cosine")
+            # bm25 on body
             body_scores = bm25(body_index, q_tokens, pls)
-            max_bm =1
-            if body_scores:
-                max_bm = max(body_scores.items(), key=lambda x: x[1])[1]
-            for i in body_scores:
-                body_scores[i] = body_scores[i] / max_bm
-
-            sim_dict = cosine_sim(body_index, q_tokens, pls)
-            max_sim =1
-            if sim_dict:
-                max_sim = max(sim_dict.items(), key=lambda x: x[1])[1]
-            for i in sim_dict:
-                sim_dict[i] = sim_dict[i] / max_sim
-
-            merge = merge_results(sim_dict, body_scores)
-
-            sort = get_top_n(merge)
-            lst = [(doc_id, pagerank.get(doc_id, 0)) for doc_id, score in sort]
-            sort2 = sorted(lst, key=lambda x: x[1], reverse=True)
-            res = [(j[0], doc_title_dict[j[0]]) for j in sort2]
+            lst = body_scores.most_common(100)
+            new = [(j[0], pagerank.get(j[0], 0)) for j in lst]
+            sort = sorted(new, key=lambda x: x[1], reverse=True)
+            res = [(j[0], doc_title_dict[j[0]]) for j in sort]
 
     return res
-
 
 def search_body_back(query):
     q_tokens = tokenize(query)
@@ -424,7 +402,6 @@ def binary_body_search(query):
     return res
 
 
-
 def get_pagerank_back(wiki_ids):
     res = []
     for i in wiki_ids:
@@ -439,3 +416,89 @@ def get_pageview_back(wiki_ids):
         res.append(pageview[i])
 
     return res
+
+""" SEARCH with bm-25-body, cosine-body, binary-title:  best precision , worst time """
+
+# def search_back(query):
+#     q_tokens = tokenize(query)
+#     pls = {}
+#     pls_title = {}
+#     for i in q_tokens:
+#         pls[i] = read_posting_list(body_index, i)
+#         pls_title[i] = read_posting_list(title_index, i)
+#
+#
+#     if is_question(query):
+#         print(query)
+#         print("body-bm + body-cosine")
+#         bm_scores = bm25(body_index, q_tokens, pls)
+#         max_bm = 1
+#         if bm_scores:
+#             max_bm = max(bm_scores.items(), key=lambda x: x[1])[1]
+#         for i in bm_scores:
+#             bm_scores[i] = bm_scores[i] / max_bm
+#
+#         cosine_scores = cosine_sim(body_index, q_tokens, pls)
+#         max_sim = 1
+#         if cosine_scores:
+#             max_sim = max(cosine_scores.items(), key=lambda x: x[1])[1]
+#         for i in cosine_scores:
+#             cosine_scores[i] = cosine_scores[i] / max_sim
+#
+#         merge = merge_results(cosine_scores, bm_scores, weight_1=0.3, weight_2=0.7)
+#
+#         sort = get_top_n(merge)
+#         lst = [(doc_id, pagerank.get(doc_id, 0)) for doc_id, score in sort]
+#         sort2 = sorted(lst, key=lambda x: x[1], reverse=True)
+#         res = [(j[0], doc_title_dict[j[0]]) for j in sort2]
+#
+#     else:
+#         candidates = get_candidate_documents_and_scores(q_tokens, title_index, pls_title)
+#         if candidates:
+#             print(query)
+#             print("binary_title + body-bm")
+#             can = Counter(elem[0] for elem in candidates.keys())
+#             for i in can:
+#                 can[i] = can[i]/len(q_tokens)
+#
+#             normalized = can.items()
+#             # max_number = max(normalized, key=lambda x: x[1])[1]
+#             title_lst = [(doc_id, pageview.get(doc_id,0)) for doc_id, number in normalized if number > 0.7]
+#
+#             body_scores = bm25(body_index, q_tokens, pls)
+#             body_lst = [(doc_id, pageview.get(doc_id,0)) for doc_id, score in body_scores.most_common(100)]
+#             merge = title_lst
+#             for i in body_lst:
+#                 if i not in merge:
+#                     merge.append(i)
+#             sort = sorted(merge, key=lambda x: x[1], reverse=True)
+#             res = [(j[0], doc_title_dict[j[0]]) for j in sort[:100]]
+#
+#         else:
+#             print(query)
+#             print("body-bm + body-cosine")
+#             bm_scores = bm25(body_index, q_tokens, pls)
+#             max_bm = 1
+#             if bm_scores:
+#                 max_bm = max(bm_scores.items(), key=lambda x: x[1])[1]
+#             for i in bm_scores:
+#                 bm_scores[i] = bm_scores[i] / max_bm
+#
+#             cosine_scores = cosine_sim(body_index, q_tokens, pls)
+#             max_sim =1
+#             if cosine_scores:
+#                 max_sim = max(cosine_scores.items(), key=lambda x: x[1])[1]
+#             for i in cosine_scores:
+#                 cosine_scores[i] = cosine_scores[i] / max_sim
+#
+#             merge = merge_results(cosine_scores, bm_scores, weight_1=0.3, weight_2=0.7)
+#
+#             sort = get_top_n(merge)
+#             lst = [(doc_id, pagerank.get(doc_id, 0)) for doc_id, score in sort]
+#             sort2 = sorted(lst, key=lambda x: x[1], reverse=True)
+#             res = [(j[0], doc_title_dict[j[0]]) for j in sort2]
+#
+#     return res
+
+
+
